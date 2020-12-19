@@ -16,7 +16,7 @@ namespace HealthMod
         public override string ID => "Health";
         public override string Name => "Health";
         public override string Author => "Horsey4";
-        public override string Version => "1.0.1";
+        public override string Version => "1.0.0";
         public override bool SecondPass => true;
         public string saveFile => $@"{ModLoader.GetModConfigFolder(this)}\save.txt";
         public FsmFloat drunk => FsmVariables.GlobalVariables.FindFsmFloat("PlayerDrunk");
