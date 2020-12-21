@@ -1,4 +1,4 @@
-﻿using MSCLoader;
+using MSCLoader;
 using UnityEngine;
 using UnityStandardAssets.ImageEffects;
 using HutongGames.PlayMaker;
@@ -16,16 +16,16 @@ namespace HealthMod
         public override string ID => "Health";
         public override string Name => "Health";
         public override string Author => "Horsey4";
-        public override string Version => "1.0.0";
+        public override string Version => "1.0.1";
         public override bool SecondPass => true;
         public string saveFile => $@"{ModLoader.GetModConfigFolder(this)}\save.txt";
         public FsmFloat drunk => FsmVariables.GlobalVariables.FindFsmFloat("PlayerDrunk");
         FsmString vehicle => FsmVariables.GlobalVariables.FindFsmString("PlayerCurrentVehicle");
         FsmFloat fatigue => FsmVariables.GlobalVariables.FindFsmFloat("PlayerFatigue");
         FsmFloat burns => FsmVariables.GlobalVariables.FindFsmFloat("PlayerBurns");
+        public Settings crashHpLoss;
+        public ConfigurableJoint vehiJoint;
         VignetteAndChromaticAberration damageEffect;
-        ConfigurableJoint vehiJoint;
-        CrashListener[] listeners;
         GameObject death;
         AudioClip[] hitSfx;
         Material hudMat;
@@ -46,17 +46,16 @@ namespace HealthMod
         FsmFloat[] deathSpeeds;
         FsmFloat wasp;
         Settings vanillaMode;
-        Settings crashHpLoss;
         Settings difficulty;
         Settings minCrashSpeed;
         public float hp;
+        public float crashMulti;
+        public float crashCooldown;
+        public float crashMin;
         public int poisonCounter;
-        float crashMulti;
-        float crashCooldown;
         float oldForce;
         float pHunger;
         float difficultyMulti;
-        float crashMin;
         int sleepCounter;
         bool mode;
 
@@ -148,20 +147,25 @@ namespace HealthMod
                 actions[1].Enabled = false; // Disable vignetting for wasp stings
                 actions[2].Enabled = false;
                 actions[3].Enabled = false;
-                camera.Find("Drink/Hand/SpiritBottle").gameObject.AddComponent<DrinkListener>().drinkMulti = 100;
-                camera.Find("Drink/Hand/BoozeBottle").gameObject.AddComponent<DrinkListener>().drinkMulti = 50;
-                camera.Find("Drink/Hand/ShotGlass").gameObject.AddComponent<DrinkListener>().drinkMulti = 30;
-                camera.Find("Drink/Hand/BeerBottle").gameObject.AddComponent<DrinkListener>().drinkMulti = 10;
+                camera.Find("Drink/Hand/SpiritBottle").gameObject.AddComponent<DrinkListener>().mod = this;
+                camera.Find("Drink/Hand/BoozeBottle").gameObject.AddComponent<DrinkListener>().mod = this;
+                camera.Find("Drink/Hand/ShotGlass").gameObject.AddComponent<DrinkListener>().mod = this;
+                camera.Find("Drink/Hand/BeerBottle").gameObject.AddComponent<DrinkListener>().mod = this;
                 for (var i = 13; i < 21; i++)
                     hitList.Add(audio.GetChild(i).GetComponent<AudioSource>().clip); // Get damage sfx
                 hitSfx = hitList.ToArray();
                 wiringFsm = GameObject.Find("SATSUMA(557kg, 248)/Wiring").GetComponents<PlayMakerFSM>().FirstOrDefault(x => x.FsmName == "Shock");
                 wiringFsm.FsmStates.FirstOrDefault(x => x.Name == "Random").Actions[0].Enabled = false;
-                callFsm = GameObject.Find("YARD/Building/LIVINGROOM/Telephone/Logic").transform.Find("Ring").GetComponent<PlayMakerFSM>();
+                callFsm = GameObject.Find("YARD").transform.Find("Building/LIVINGROOM/Telephone/Logic/Ring").GetComponent<PlayMakerFSM>();
                 callFsm.gameObject.SetActive(true);
+                if (!callFsm.transform.parent.gameObject.activeSelf)
+                {
+                    callFsm.transform.parent.gameObject.SetActive(true);
+                    callFsm.transform.parent.gameObject.SetActive(false);
+                }
                 callFsm.gameObject.SetActive(false);
                 callFsm.FsmStates.FirstOrDefault(x => x.Name == "Random").Actions[0].Enabled = false;
-                camera.Find("DeathBee").gameObject.AddComponent<BeeListener>();
+                camera.Find("DeathBee").gameObject.AddComponent<BeeListener>().mod = this;
 
                 // Other setup
                 for (var i = 0; i < colls.Length; i++)
@@ -206,18 +210,17 @@ namespace HealthMod
             HUD.Find("Jailtime").localPosition = new Vector3(-11.5f, 6 - offset);
 
             // Hook all vehicles
-            var listenerList = new List<CrashListener>();
             var deathSpeedList = new List<FsmFloat>();
             var cars = Resources.FindObjectsOfTypeAll<CarDynamics>();
             for (var i = 0; i < cars.Length; i++)
             {
-                listenerList.Add(cars[i].gameObject.AddComponent<CrashListener>());
+                log($"Hooking {cars[i].name}");
+                cars[i].gameObject.AddComponent<CrashListener>().mod = this;
                 var fsms = cars[i].GetComponents<PlayMakerFSM>();
                 if (cars[i].transform.parent != null && fsms.Length > 0)
                     for (var x = 0; x < fsms.Length; x++)
                         if (fsms[x].FsmName.Contains("Throttle")) deathSpeedList.Add(fsms[x].FsmVariables.FindFsmFloat("DeathSpeedMPS"));
             }
-            listeners = listenerList.ToArray();
             deathSpeeds = deathSpeedList.ToArray();
             updateSettings();
         }
@@ -241,7 +244,7 @@ namespace HealthMod
             {
                 if (vehicle.Value != "" && (!vehiJoint || vehiJoint && vehiJoint.breakForce != Mathf.Infinity))
                 {
-                    vehiJoint = player.parent.parent.parent.GetComponent<ConfigurableJoint>();
+                    vehiJoint = player.GetComponentInParent<ConfigurableJoint>();
                     oldForce = vehiJoint.breakForce;
                     vehiJoint.breakForce = Mathf.Infinity;
                     vehiJoint.breakTorque = Mathf.Infinity;
@@ -257,33 +260,6 @@ namespace HealthMod
                             break;
                     }
                 }
-                for (var i = 0; i < listeners.Length; i++)
-                    if (listeners[i].hitSpeed > crashMin)
-                    {
-                        if (listeners[i].playerCar)
-                        {
-                            if (player.root == listeners[i].transform && damage(listeners[i].hitSpeed * crashMulti, "PlayerCrash"))
-                            {
-                                switch (listeners[i].hitObj)
-                                {
-                                    case "TRAIN":
-                                        kill("Train");
-                                        break;
-                                    default:
-                                        kill("Crash");
-                                        break;
-                                }
-                            }
-                        }
-                        else if (damage(listeners[i].hitSpeed * 5, "AICrash"))
-                        {
-                            if (listeners[i].name.Contains("RALLY")) kill("RunOverRally");
-                            else if (listeners[i].name.Contains("drag")) kill("RunOverDrag");
-                            else kill("RunOver");
-                        }
-                        crashCooldown = listeners[i].hitSpeed;
-                        listeners[i].hitSpeed = 0;
-                    }
                 if (crashCooldown > 0) crashCooldown -= 0.05f;
             }
             for (var i = 0; i < stats.Length; i++)
@@ -303,7 +279,7 @@ namespace HealthMod
             }
             if (wasp.Value > 0)
             {
-                if (damage(wasp.Value * 4, "WaspDamage", 0.25f)) kill("Wasp");
+                if (damage(wasp.Value * 20, "WaspDamage", 0.05f)) kill("Wasp");
                 wasp.Value = 0;
             }
             if (wiringFsm.ActiveStateName == "Random")
@@ -358,8 +334,6 @@ namespace HealthMod
             difficultyMulti = Mathf.Clamp(Convert.ToSingle(difficulty.Value), 0.5f, 3);
             crashMin = Mathf.Clamp(Convert.ToSingle(minCrashSpeed.Value), 10, 30) * 5 / 18;
 
-            if (listeners != null) for (var i = 0; i < listeners.Length; i++)
-                listeners[i].enabled = (bool)crashHpLoss.Value;
             if (deathSpeeds != null && !mode) for (var i = 0; i < deathSpeeds.Length; i++)
                 deathSpeeds[i].Value = (bool)crashHpLoss.Value ? Mathf.Infinity : 5;
         }
@@ -393,30 +367,33 @@ namespace HealthMod
 
         public void kill(string type = null)
         {
-            if (type == "Crash" && vehiJoint && vehicle.Value != "Tangerine") GameObject.Destroy(vehiJoint);
-            else
-            {
-                death.SetActive(true);
-                if (type != null)
-                    deathVars.FindFsmBool(type).Value = true;
-            }
+            death.SetActive(true);
+            if (type != null)
+                deathVars.FindFsmBool(type).Value = true;
         }
     }
 
     public class CrashListener : MonoBehaviour
     {
         Rigidbody thisRb => GetComponent<Rigidbody>();
-        public bool playerCar => transform.parent == null;
-        public string hitObj;
-        public float hitSpeed;
+        public Health mod;
         float velo;
 
         void OnCollisionEnter(Collision col)
         {
-            if (playerCar ^ col.transform.root.name == "PLAYER")
+            if ((bool)mod.crashHpLoss.Value && mod.crashCooldown <= 0 && (!transform.parent ^ col.transform.root.name == "PLAYER"))
             {
-                hitSpeed = Mathf.Abs(thisRb.velocity.magnitude - velo); // Acceleration
-                hitObj = col.gameObject.name;
+                var hitSpeed = Mathf.Abs(thisRb.velocity.magnitude - velo);
+                if (hitSpeed < mod.crashMin) return;
+                if (mod.damage(hitSpeed * mod.crashMulti, "Crash"))
+                    if (transform.parent)
+                    {
+                        if (name.Contains("RALLY")) mod.kill("RunOverRally");
+                        else if (name.Contains("drag")) mod.kill("RunOverDrag");
+                        else mod.kill("RunOver");
+                    }
+                    else if (col.gameObject.name == "TRAIN") mod.kill("Train");
+                    else mod.vehiJoint.breakTorque = 0;
             }
         }
 
@@ -425,7 +402,7 @@ namespace HealthMod
 
     public class BeeListener : MonoBehaviour
     {
-        Health mod => ModLoader.LoadedMods.FirstOrDefault(x => x.ID == "Health") as Health;
+        public Health mod;
 
         void Update()
         {
@@ -438,12 +415,28 @@ namespace HealthMod
 
     public class DrinkListener : MonoBehaviour
     {
-        Health mod => ModLoader.LoadedMods.FirstOrDefault(x => x.ID == "Health") as Health;
-        public int drinkMulti;
+        public Health mod;
+        int drinkMulti;
 
-        void FixedUpdate()
+        void Awake()
         {
-            if (mod.drunk.Value > 4) mod.poisonCounter += drinkMulti;
+            switch (name)
+            {
+                case "SpiritBottle":
+                    drinkMulti = 100;
+                    break;
+                case "BoozeBottle":
+                    drinkMulti = 50;
+                    break;
+                case "ShotGlass":
+                    drinkMulti = 30;
+                    break;
+                case "BeerBottle":
+                    drinkMulti = 10;
+                    break;
+            }
         }
+
+        void FixedUpdate() { if (mod.drunk.Value > 4) mod.poisonCounter += drinkMulti; }
     }
 }
