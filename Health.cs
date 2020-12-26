@@ -16,77 +16,78 @@ namespace HealthMod
         public override string ID => "Health";
         public override string Name => "Health";
         public override string Author => "Horsey4";
-        public override string Version => "1.0.1";
+        public override string Version => "1.1.0";
         public override bool SecondPass => true;
         public string saveFile => $@"{ModLoader.GetModConfigFolder(this)}\save.txt";
         public FsmFloat drunk => FsmVariables.GlobalVariables.FindFsmFloat("PlayerDrunk");
-        FsmString vehicle => FsmVariables.GlobalVariables.FindFsmString("PlayerCurrentVehicle");
-        FsmFloat fatigue => FsmVariables.GlobalVariables.FindFsmFloat("PlayerFatigue");
-        FsmFloat burns => FsmVariables.GlobalVariables.FindFsmFloat("PlayerBurns");
+        public FsmString vehicle => FsmVariables.GlobalVariables.FindFsmString("PlayerCurrentVehicle");
+        public FsmFloat fatigue => FsmVariables.GlobalVariables.FindFsmFloat("PlayerFatigue");
+        public FsmFloat burns => FsmVariables.GlobalVariables.FindFsmFloat("PlayerBurns");
+        public Settings vanillaMode;
         public Settings crashHpLoss;
+        public Settings difficulty;
+        public Settings minCrashSpeed;
         public ConfigurableJoint vehiJoint;
-        VignetteAndChromaticAberration damageEffect;
-        GameObject death;
-        AudioClip[] hitSfx;
-        Material hudMat;
-        Transform HUD;
-        Transform hpBar;
-        Transform player;
-        PlayMakerFSM[] sleepFsms;
-        PlayMakerFSM wiringFsm;
-        PlayMakerFSM callFsm;
-        FsmVariables deathVars;
-        FsmFloat[] stats =
+        public GameObject death;
+        public VignetteAndChromaticAberration damageEffect;
+        public AudioClip[] hitSfx;
+        public Material hudMat;
+        public Transform HUD;
+        public Transform hpBar;
+        public Transform player;
+        public PlayMakerFSM wiringFsm;
+        public PlayMakerFSM callFsm;
+        public PlayMakerFSM swimFsm;
+        public FsmVariables deathVars;
+        public FsmFloat[] stats =
         {
             FsmVariables.GlobalVariables.FindFsmFloat("PlayerThirst"),
             FsmVariables.GlobalVariables.FindFsmFloat("PlayerHunger"),
             FsmVariables.GlobalVariables.FindFsmFloat("PlayerStress"),
             FsmVariables.GlobalVariables.FindFsmFloat("PlayerUrine")
         };
-        FsmFloat[] deathSpeeds;
-        FsmFloat wasp;
-        Settings vanillaMode;
-        Settings difficulty;
-        Settings minCrashSpeed;
+        public FsmFloat[] deathSpeeds;
+        public FsmFloat wasp;
         public float hp;
         public float crashMulti;
         public float crashCooldown;
         public float crashMin;
         public int poisonCounter;
-        float oldForce;
-        float pHunger;
+        public float oldForce;
+        public float pHunger;
+        public int sleepCounter;
         float difficultyMulti;
-        int sleepCounter;
         bool mode;
+
+        /* Changelogs
+         * Fixed damage with crashing and bees after you already have died
+         * Fixed player cars damaging you even if you arent in them
+         * Fixed AI crashes not damaginy you at all
+         * Fixed OnSave() error not showing in menu
+         * Added damage from getting hit by lightning
+         * Added damage from drowning while drunk
+         */
 
         public override void OnNewGame()
         {
             try { File.Delete(saveFile); }
             catch (Exception e)
             {
-                error($"Could not reset {saveFile}\n{e.Message}");
-                log($"Reset failed\n{e}");
+                error($"Error resetting\n{e.Message}");
+                log($"Error resetting\n{e}");
             }
         }
 
         public override void OnSave()
         {
-            try
-            {
-                File.WriteAllText(saveFile, Convert.ToBase64String(Encoding.UTF8.GetBytes
-                (
-                    string.Join(",", new string[]
-                    {
-                        hp.ToString(),
-                        poisonCounter.ToString()
-                    })
-                )));
-            }
-            catch (Exception e)
-            {
-                error($"Could not save {saveFile}\n{e.Message}");
-                log($"Save failed\n{e}");
-            }
+            File.WriteAllText(saveFile, Convert.ToBase64String(Encoding.UTF8.GetBytes
+            (
+                string.Join(",", new string[]
+                {
+                    hp.ToString(),
+                    poisonCounter.ToString()
+                })
+            )));
         }
 
         public override void ModSettings()
@@ -106,6 +107,8 @@ namespace HealthMod
 
         public override void OnLoad()
         {
+            log("Loading Stage 1");
+
             // All mode variables
             player = GameObject.Find("PLAYER").transform;
             HUD = GameObject.Find("GUI/HUD").transform;
@@ -132,28 +135,20 @@ namespace HealthMod
 
             if (!mode)
             {
+                log("Loading Stage 2");
+
                 // Non vanilla mode variables
-                var colls = Resources.FindObjectsOfTypeAll<Collider>();
                 pHunger = stats[1].Value;
                 mode = (bool)vanillaMode.Value;
                 damageEffect = camera.GetComponent<VignetteAndChromaticAberration>();
                 deathVars = death.GetComponent<PlayMakerFSM>().FsmVariables;
 
-                // Damage setup
+                // FSM setup
                 var actions = waspFsm.FsmStates.FirstOrDefault(x => x.Name == "Allergy").Actions;
                 var audio = GameObject.Find("MasterAudio/PlayerMisc").transform;
-                var hitList = new List<AudioClip>();
-                var sleepList = new List<PlayMakerFSM>();
                 actions[1].Enabled = false; // Disable vignetting for wasp stings
                 actions[2].Enabled = false;
                 actions[3].Enabled = false;
-                camera.Find("Drink/Hand/SpiritBottle").gameObject.AddComponent<DrinkListener>().mod = this;
-                camera.Find("Drink/Hand/BoozeBottle").gameObject.AddComponent<DrinkListener>().mod = this;
-                camera.Find("Drink/Hand/ShotGlass").gameObject.AddComponent<DrinkListener>().mod = this;
-                camera.Find("Drink/Hand/BeerBottle").gameObject.AddComponent<DrinkListener>().mod = this;
-                for (var i = 13; i < 21; i++)
-                    hitList.Add(audio.GetChild(i).GetComponent<AudioSource>().clip); // Get damage sfx
-                hitSfx = hitList.ToArray();
                 wiringFsm = GameObject.Find("SATSUMA(557kg, 248)/Wiring").GetComponents<PlayMakerFSM>().FirstOrDefault(x => x.FsmName == "Shock");
                 wiringFsm.FsmStates.FirstOrDefault(x => x.Name == "Random").Actions[0].Enabled = false;
                 callFsm = GameObject.Find("YARD").transform.Find("Building/LIVINGROOM/Telephone/Logic/Ring").GetComponent<PlayMakerFSM>();
@@ -165,19 +160,24 @@ namespace HealthMod
                 }
                 callFsm.gameObject.SetActive(false);
                 callFsm.FsmStates.FirstOrDefault(x => x.Name == "Random").Actions[0].Enabled = false;
-                camera.Find("DeathBee").gameObject.AddComponent<BeeListener>().mod = this;
+                swimFsm = player.GetComponents<PlayMakerFSM>().FirstOrDefault(x => x.FsmName == "Swim");
+                var state = swimFsm.FsmStates.FirstOrDefault(x => x.Name == "Randomize");
+                state.Transitions[1].FsmEvent = swimFsm.FsmEvents.FirstOrDefault(x => x.Name == "SWIM");
+                state.Actions[0].Enabled = false;
 
-                // Other setup
-                for (var i = 0; i < colls.Length; i++)
-                    if (colls[i].name == "SleepTrigger") sleepList.Add(colls[i].GetComponent<PlayMakerFSM>()); // Sleep healing
-                sleepFsms = sleepList.ToArray();
-                var gifuFsm = GameObject.Find("GIFU(750/450psi)").transform.Find("LOD/PlayerTrigger/DriveTrigger")
-                    .GetComponents<PlayMakerFSM>().FirstOrDefault(x => x.FsmName == "HeadForce").FsmStates;
-                for (var i = 0; i < gifuFsm.Length; i++)
-                {
-                    (gifuFsm[i].Actions[2] as SetProperty).everyFrame = false;
-                    (gifuFsm[i].Actions[3] as SetProperty).everyFrame = false;
-                } // Fix the gifu setting the joint strength every frame
+                // Component Setup
+                camera.Find("Drink/Hand/SpiritBottle").gameObject.AddComponent<DrinkListener>().mod = this;
+                camera.Find("Drink/Hand/BoozeBottle").gameObject.AddComponent<DrinkListener>().mod = this;
+                camera.Find("Drink/Hand/ShotGlass").gameObject.AddComponent<DrinkListener>().mod = this;
+                camera.Find("Drink/Hand/BeerBottle").gameObject.AddComponent<DrinkListener>().mod = this;
+                camera.Find("DeathBee").gameObject.AddComponent<BeeListener>().mod = this;
+                GameObject.Find("MAP").transform.Find("CloudSystem/Clouds/Thunder/GroundStrike").gameObject.AddComponent<LightningListener>().mod = this;
+
+                // Damage setup
+                var hitList = new List<AudioClip>();
+                for (var i = 13; i < 21; i++)
+                    hitList.Add(audio.GetChild(i).GetComponent<AudioSource>().clip); // Get damage sfx
+                hitSfx = hitList.ToArray();
                 damageEffect.blur = Mathf.Infinity;
                 damageEffect.blurSpread = 0;
             }
@@ -192,6 +192,8 @@ namespace HealthMod
 
         public override void SecondPassOnLoad()
         {
+            log("Loading Stage 3");
+
             // Fix HUD with other mods
             var offset = 0f;
             if (ModLoader.IsModPresent("Alcohol_Meter"))
@@ -209,19 +211,37 @@ namespace HealthMod
             HUD.Find("Money").localPosition = new Vector3(-11.5f, 6.4f - offset);
             HUD.Find("Jailtime").localPosition = new Vector3(-11.5f, 6 - offset);
 
-            // Hook all vehicles
+            // Other setup
             var deathSpeedList = new List<FsmFloat>();
-            var cars = Resources.FindObjectsOfTypeAll<CarDynamics>();
+            var cars = Resources.FindObjectsOfTypeAll<Drivetrain>();
+            var colls = Resources.FindObjectsOfTypeAll<Collider>();
+            var helmetOn = FsmVariables.GlobalVariables.FindFsmBool("PlayerHelmet");
             for (var i = 0; i < cars.Length; i++)
             {
-                log($"Hooking {cars[i].name}");
+                log($"Hooking {cars[i].name}, Root = {cars[i].transform.parent == null}");
                 cars[i].gameObject.AddComponent<CrashListener>().mod = this;
                 var fsms = cars[i].GetComponents<PlayMakerFSM>();
                 if (cars[i].transform.parent != null && fsms.Length > 0)
+                {
                     for (var x = 0; x < fsms.Length; x++)
                         if (fsms[x].FsmName.Contains("Throttle")) deathSpeedList.Add(fsms[x].FsmVariables.FindFsmFloat("DeathSpeedMPS"));
+                }
+                else
+                {
+                    var trigger = cars[i].transform.Find("LOD/PlayerTrigger/DriveTrigger");
+                    if (!trigger) trigger = cars[i].transform.Find("PlayerTrigger/DriveTrigger");
+                    var fsm = trigger.GetComponents<PlayMakerFSM>().FirstOrDefault(x => x.FsmName == "HeadForce");
+                    if (!fsm) continue;
+
+                    (fsm.FsmStates[0].Actions[2] as SetProperty).everyFrame = false;
+                    (fsm.FsmStates[0].Actions[3] as SetProperty).everyFrame = false;
+                    (fsm.FsmStates[1].Actions[2] as SetProperty).everyFrame = false;
+                    (fsm.FsmStates[1].Actions[3] as SetProperty).everyFrame = false;
+                } // Disable setting of joint strength everyframe
             }
             deathSpeeds = deathSpeedList.ToArray();
+            for (var i = 0; i < colls.Length; i++)
+                if (colls[i].name == "SleepTrigger") colls[i].gameObject.AddComponent<SleepListener>().mod = this;
             updateSettings();
         }
 
@@ -239,7 +259,7 @@ namespace HealthMod
                 return;
             }
 
-            // HP Loss
+            // HP Change
             if ((bool)crashHpLoss.Value)
             {
                 if (vehicle.Value != "" && (!vehiJoint || vehiJoint && vehiJoint.breakForce != Mathf.Infinity))
@@ -274,12 +294,12 @@ namespace HealthMod
                 }
             if (burns.Value > 0)
             {
-                if (editHp(-burns.Value, "FireDamage")) kill("Burn");
+                if (editHp(-burns.Value, "Burn")) kill("Burn");
                 burns.Value = 0;
             }
             if (wasp.Value > 0)
             {
-                if (damage(wasp.Value * 20, "WaspDamage", 0.05f)) kill("Wasp");
+                if (damage(wasp.Value * 20, "Wasp", 0.05f)) kill("Wasp");
                 wasp.Value = 0;
             }
             if (wiringFsm.ActiveStateName == "Random")
@@ -292,6 +312,11 @@ namespace HealthMod
                 callFsm.SendEvent("SURVIVE");
                 if (damage(50, "PhoneThunder", 0.5f)) kill("PhoneThunder");
             }
+            if (swimFsm.ActiveStateName == "Randomize")
+            {
+                swimFsm.SendEvent("SWIM");
+                if (editHp(-5, "DrunkDrown")) kill("DrunkDrown");
+            }
             if (poisonCounter > 0)
             {
                 poisonCounter--;
@@ -302,24 +327,10 @@ namespace HealthMod
                     death.transform.Find("GameOverScreen/Paper/Fatigue/TextFI").GetComponent<TextMesh>().text = "Mies kuoli\nalkoholimyrkytykseen";
                 }
             }
-
-            // Healing
-            for (var i = 0; i < sleepFsms.Length; i++)
-                switch (sleepFsms[i].ActiveStateName)
-                {
-                    case "Get positions":
-                        sleepCounter = 0;
-                        break;
-                    case "Sleep":
-                        sleepCounter++;
-                        if (sleepCounter == 200)
-                            editHp(fatigue.Value, "SleepHeal");
-                        break;
-                }
             if (pHunger != stats[1].Value)
             {
                 var diff = pHunger - stats[1].Value;
-                if (diff > 0) editHp(diff, "EatHeal");
+                if (diff > 0) editHp(diff, "Eat");
                 pHunger = stats[1].Value;
             }
 
@@ -338,9 +349,9 @@ namespace HealthMod
                 deathSpeeds[i].Value = (bool)crashHpLoss.Value ? Mathf.Infinity : 5;
         }
 
-        void error(string str) => ModConsole.Error($"[{ID}] {str}");
+        void error(object str) => ModConsole.Error($"[{ID}] {str}");
 
-        void log(string str) => Console.WriteLine($"[{ID}] {str}");
+        void log(object str) => Console.WriteLine($"[{ID}] {str}");
 
         public bool editHp(float val, string reason, bool noMulti = false)
         {
@@ -360,6 +371,7 @@ namespace HealthMod
             damageEffect.enabled = true;
             damageEffect.blurSpread += val / 10;
             AudioSource.PlayClipAtPoint(hitSfx[UnityEngine.Random.Range(0, hitSfx.Length - 1)], player.transform.position);
+            if (reason == "Crash") crashCooldown = val;
 
             log($"Blurred because {reason}");
             return damageMulti == 0 || editHp(-val * damageMulti, reason);
@@ -371,72 +383,5 @@ namespace HealthMod
             if (type != null)
                 deathVars.FindFsmBool(type).Value = true;
         }
-    }
-
-    public class CrashListener : MonoBehaviour
-    {
-        Rigidbody thisRb => GetComponent<Rigidbody>();
-        public Health mod;
-        float velo;
-
-        void OnCollisionEnter(Collision col)
-        {
-            if ((bool)mod.crashHpLoss.Value && mod.crashCooldown <= 0 && (!transform.parent ^ col.transform.root.name == "PLAYER"))
-            {
-                var hitSpeed = Mathf.Abs(thisRb.velocity.magnitude - velo);
-                if (hitSpeed < mod.crashMin) return;
-                if (mod.damage(hitSpeed * mod.crashMulti, "Crash"))
-                    if (transform.parent)
-                    {
-                        if (name.Contains("RALLY")) mod.kill("RunOverRally");
-                        else if (name.Contains("drag")) mod.kill("RunOverDrag");
-                        else mod.kill("RunOver");
-                    }
-                    else if (col.gameObject.name == "TRAIN") mod.kill("Train");
-                    else mod.vehiJoint.breakTorque = 0;
-            }
-        }
-
-        void FixedUpdate() => velo = thisRb.velocity.magnitude;
-    }
-
-    public class BeeListener : MonoBehaviour
-    {
-        public Health mod;
-
-        void Update()
-        {
-            AudioSource.PlayClipAtPoint(GetComponent<AudioSource>().clip, transform.position);
-            if (mod.damage(2000, "Bee", 0.015f))
-                mod.kill("DriveBee");
-            gameObject.SetActive(false);
-        }
-    }
-
-    public class DrinkListener : MonoBehaviour
-    {
-        public Health mod;
-        int drinkMulti;
-
-        void Awake()
-        {
-            switch (name)
-            {
-                case "SpiritBottle":
-                    drinkMulti = 100;
-                    break;
-                case "BoozeBottle":
-                    drinkMulti = 50;
-                    break;
-                case "ShotGlass":
-                    drinkMulti = 30;
-                    break;
-                case "BeerBottle":
-                    drinkMulti = 10;
-                    break;
-            }
-        }
-
-        void FixedUpdate() { if (mod.drunk.Value > 4) mod.poisonCounter += drinkMulti; }
     }
 }
