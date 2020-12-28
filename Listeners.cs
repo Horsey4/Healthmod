@@ -1,6 +1,5 @@
-﻿using UnityEngine;
+using UnityEngine;
 using System.Linq;
-using MSCLoader;
 
 namespace HealthMod
 {
@@ -12,21 +11,20 @@ namespace HealthMod
 
         void OnCollisionEnter(Collision col)
         {
-            if (!mod.death.activeSelf && (bool)mod.crashHpLoss.Value && mod.crashCooldown <= 0
-                && (mod.vehicle.Value != "" && !transform.parent)
-                ^ (col.transform.root.name == "PLAYER" && name.Contains(mod.vehicle.Value.ToUpper())))
+            if (!mod.death.activeSelf && (bool)mod.crashHpLoss.Value && mod.crashCooldown <= 0)
             {
                 var hitSpeed = Mathf.Abs(thisRb.velocity.magnitude - velo);
                 if (hitSpeed < mod.crashMin) return;
+                mod.crashCooldown = hitSpeed;
                 if (!transform.parent)
                 {
-                    if (mod.damage(hitSpeed * mod.crashMulti, "Crash"))
+                    if (mod.vehicle.Value != "" && name.Contains(mod.vehicle.Value.ToUpper()) && mod.damage(hitSpeed * mod.crashMulti, "Crash"))
                     {
                         if (col.gameObject.name == "TRAIN") mod.kill("Train");
                         else mod.vehiJoint.breakTorque = 0;
                     }
                 }
-                else if (mod.damage(hitSpeed * 6, "AICrash"))
+                else if (col.transform.root.name == "PLAYER" && mod.damage(hitSpeed * 6, "AICrash"))
                 {
                     if (name.Contains("RALLY")) mod.kill("RunOverRally");
                     else if (name.Contains("drag")) mod.kill("RunOverDrag");
@@ -42,7 +40,7 @@ namespace HealthMod
     {
         public Health mod;
 
-        void Update()
+        void OnEnable()
         {
             AudioSource.PlayClipAtPoint(GetComponent<AudioSource>().clip, transform.position);
             if (!mod.death.activeSelf && mod.damage(2000, "Bee", 0.015f))
