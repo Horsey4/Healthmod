@@ -16,7 +16,7 @@ namespace HealthMod
         public override string ID => "Health";
         public override string Name => "Health";
         public override string Author => "Horsey4";
-        public override string Version => "1.1.1";
+        public override string Version => "1.1.2";
         public override bool SecondPass => true;
         public string saveFile => $@"{ModLoader.GetModConfigFolder(this)}\save.txt";
         public FsmFloat drunk => FsmVariables.GlobalVariables.FindFsmFloat("PlayerDrunk");
@@ -60,10 +60,7 @@ namespace HealthMod
         bool mode;
 
         /* Changelogs
-         * Fixed another crash damage bug I missed
-         * Fixed an error when the house is burnt down
-         * Fixed blur not going away after death
-         * Minor optimizations
+         * Fixed the Tangerine (and possibly other modded vehicles) not being hooked
          */
 
         public override void OnNewGame() => File.Delete(saveFile);
@@ -215,8 +212,20 @@ namespace HealthMod
                 }
                 else
                 {
-                    var trigger = cars[i].transform.Find("LOD/PlayerTrigger/DriveTrigger");
-                    if (!trigger) trigger = cars[i].transform.Find("PlayerTrigger/DriveTrigger");
+                    var joint = cars[i].GetComponentInChildren<ConfigurableJoint>();
+                    Component trigger;
+                    if (!joint)
+                    {
+                        trigger = cars[i].transform.Find("LOD/PlayerTrigger/DriveTrigger");
+                        if (!trigger) trigger = cars[i].transform.Find("PlayerTrigger/DriveTrigger");
+                    }
+                    else trigger = joint;
+
+                    if (!trigger)
+                    {
+                        log("Failed");
+                        continue;
+                    }
                     var fsm = trigger.GetComponents<PlayMakerFSM>().FirstOrDefault(x => x.FsmName == "HeadForce");
                     if (!fsm) continue;
 
