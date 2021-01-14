@@ -2,7 +2,6 @@ using MSCLoader;
 using UnityEngine;
 using UnityStandardAssets.ImageEffects;
 using HutongGames.PlayMaker;
-using HutongGames.PlayMaker.Actions;
 using System;
 using System.IO;
 using System.Text;
@@ -16,8 +15,9 @@ namespace HealthMod
         public override string ID => "Health";
         public override string Name => "Health";
         public override string Author => "Horsey4";
-        public override string Version => "1.1.2";
+        public override string Version => "1.2.0";
         public override bool SecondPass => true;
+        public static int apiVer => 2;
         public string saveFile => $@"{ModLoader.GetModConfigFolder(this)}\save.txt";
         public FsmFloat drunk => FsmVariables.GlobalVariables.FindFsmFloat("PlayerDrunk");
         public FsmString vehicle => FsmVariables.GlobalVariables.FindFsmString("PlayerCurrentVehicle");
@@ -29,7 +29,7 @@ namespace HealthMod
         public Settings minCrashSpeed;
         public ConfigurableJoint vehiJoint;
         public GameObject death;
-        public VignetteAndChromaticAberration damageEffect;
+        public BlurOptimized damageEffect;
         public List<FsmFloat> deathSpeeds = new List<FsmFloat>();
         public AudioClip[] hitSfx = new AudioClip[8];
         public Material hudMat;
@@ -56,23 +56,40 @@ namespace HealthMod
         public float oldForce;
         public float pHunger;
         public int sleepCounter;
+        public bool mode;
         float difficultyMulti;
-        bool mode;
 
         /* Changelogs
-         * Fixed the Tangerine (and possibly other modded vehicles) not being hooked
+         * Moved the damage blur to BlurOptimized
+         * Fixed crashes sometimes not registering
+         * Fixed seatbelts not updating the damage multiplier
+         * Fixed vanilla mode erroring
+         * Minor optimizations
+         * Other misc bugfixes
+         */
+
+        /* API Changes
+         * Publicied mode bool
+         * Added apiVer int
+         * Added killCustom() method
+         * Added auto-return to editHp when the player is dead
+         * Added summaries to methods
+         * Allowed null to be passed as a reason to skip logging
          */
 
         public override void OnNewGame() => File.Delete(saveFile);
 
-        public override void OnSave() => File.WriteAllText(saveFile, Convert.ToBase64String(Encoding.UTF8.GetBytes
-        (
-            string.Join(",", new string[]
-            {
-                hp.ToString(),
-                poisonCounter.ToString()
-            })
-        )));
+        public override void OnSave()
+        {
+            File.WriteAllText(saveFile, Convert.ToBase64String(Encoding.UTF8.GetBytes
+            (
+                string.Join(",", new string[]
+                {
+                    hp.ToString(),
+                    poisonCounter.ToString()
+                })
+            )));
+        }
 
         public override void ModSettings()
         {
@@ -122,8 +139,7 @@ namespace HealthMod
 
                 // Non vanilla mode variables
                 pHunger = stats[1].Value;
-                mode = (bool)vanillaMode.Value;
-                damageEffect = camera.GetComponent<VignetteAndChromaticAberration>();
+                damageEffect = camera.gameObject.AddComponent<BlurOptimized>();
                 deathVars = death.GetComponent<PlayMakerFSM>().FsmVariables;
 
                 // FSM setup
@@ -163,8 +179,10 @@ namespace HealthMod
                 // Damage setup
                 for (var i = 13; i < 21; i++)
                     hitSfx[i - 13] = audio.GetChild(i).GetComponent<AudioSource>().clip; // Get damage sfx
-                damageEffect.blur = Mathf.Infinity;
-                damageEffect.blurSpread = 0;
+                damageEffect.blurShader = Shader.Find("Hidden/FastBlur");
+                damageEffect.blurIterations = 2;
+                damageEffect.downsample = 0;
+                damageEffect.blurSize = 0;
             }
             try
             {
@@ -181,10 +199,10 @@ namespace HealthMod
 
             // Fix HUD with other mods
             var offset = 0f;
+            var dirtinessDisable = ModLoader.IsModPresent("dirtmenag");
             if (ModLoader.IsModPresent("Alcohol_Meter"))
             {
-                HUD.Find("Alcohol").localPosition = ModLoader.IsModPresent("dirtmenag")
-                    ? new Vector3(-11.5f, 6.8f) : new Vector3(-11.5f, 6.4f);
+                HUD.Find("Alcohol").localPosition = dirtinessDisable ? new Vector3(-11.5f, 6.8f) : new Vector3(-11.5f, 6.4f);
                 offset += 0.4f;
             }
             if (ModLoader.IsModPresent("Playtime_and_clock_in_HUD"))
@@ -192,75 +210,58 @@ namespace HealthMod
                 if (HUD.Find("Playtime").gameObject.activeSelf) offset += 0.4f;
                 if (HUD.Find("Clock").gameObject.activeSelf) offset += 0.4f;
             }
-            if (ModLoader.IsModPresent("dirtmenag")) offset -= 0.4f;
+            if (dirtinessDisable) offset -= 0.4f;
             HUD.Find("Money").localPosition = new Vector3(-11.5f, 6.4f - offset);
             HUD.Find("Jailtime").localPosition = new Vector3(-11.5f, 6 - offset);
 
             // Other setup
-            var cars = Resources.FindObjectsOfTypeAll<Drivetrain>();
-            var colls = Resources.FindObjectsOfTypeAll<Collider>();
-            var helmetOn = FsmVariables.GlobalVariables.FindFsmBool("PlayerHelmet");
-            for (var i = 0; i < cars.Length; i++)
+            if (!mode)
             {
-                log($"Hooking {cars[i].name}, Root = {cars[i].transform.parent == null}");
-                cars[i].gameObject.AddComponent<CrashListener>().mod = this;
-                var fsms = cars[i].GetComponents<PlayMakerFSM>();
-                if (cars[i].transform.parent != null && fsms.Length > 0)
+                var cars = Resources.FindObjectsOfTypeAll<CarDynamics>();
+                var colls = Resources.FindObjectsOfTypeAll<Collider>();
+                for (var i = 0; i < cars.Length; i++)
                 {
-                    for (var x = 0; x < fsms.Length; x++)
-                        if (fsms[x].FsmName.Contains("Throttle")) deathSpeeds.Add(fsms[x].FsmVariables.FindFsmFloat("DeathSpeedMPS"));
+                    log($"Hooking {cars[i].name}, Root = {cars[i].transform.parent == null}");
+
+                    if (cars[i].transform.parent && cars[i].transform.parent.name == "VehiclesHighway")
+                    {
+                        if (cars[i].name == "TRUCK")
+                        {
+                            var transform = cars[i].transform.Find("Colliders/Cabin");
+                            transform.localPosition = new Vector3(transform.localPosition.x, transform.localPosition.y - 0.2f, transform.localPosition.z);
+                            transform.localScale = new Vector3(transform.localScale.x, transform.localScale.y, transform.localScale.z + 0.4f);
+                        }
+                        else if (cars[i].name == "POLSA")
+                        {
+                            cars[i].transform.Find("DeathColl").localPosition = Vector3.zero;
+                        }
+                    } // Fix the AI collider jank
+
+                    cars[i].gameObject.AddComponent<CrashListener>().mod = this;
+                    var fsms = cars[i].GetComponents<PlayMakerFSM>();
+                    if (cars[i].transform.parent != null && fsms.Length > 0)
+                    {
+                        for (var x = 0; x < fsms.Length; x++)
+                            if (fsms[x].FsmName.Contains("Throttle")) deathSpeeds.Add(fsms[x].FsmVariables.FindFsmFloat("DeathSpeedMPS"));
+                    }
+                    else
+                    {
+                        var trigger = cars[i].GetComponentsInChildren<Collider>().FirstOrDefault(x => x.isTrigger && x.name == "DriveTrigger");
+
+                        if (!trigger) continue;
+                        trigger.gameObject.AddComponent<SeatBeltListener>().mod = this;
+                    }
                 }
-                else
-                {
-                    var joint = cars[i].GetComponentInChildren<ConfigurableJoint>();
-                    Component trigger;
-                    if (!joint)
-                    {
-                        trigger = cars[i].transform.Find("LOD/PlayerTrigger/DriveTrigger");
-                        if (!trigger) trigger = cars[i].transform.Find("PlayerTrigger/DriveTrigger");
-                    }
-                    else trigger = joint;
-
-                    if (!trigger)
-                    {
-                        log("Failed");
-                        continue;
-                    }
-                    var fsm = trigger.GetComponents<PlayMakerFSM>().FirstOrDefault(x => x.FsmName == "HeadForce");
-                    if (!fsm) continue;
-
-                    (fsm.FsmStates[0].Actions[2] as SetProperty).everyFrame = false;
-                    (fsm.FsmStates[0].Actions[3] as SetProperty).everyFrame = false;
-                    (fsm.FsmStates[1].Actions[2] as SetProperty).everyFrame = false;
-                    (fsm.FsmStates[1].Actions[3] as SetProperty).everyFrame = false;
-                } // Disable setting of joint strength everyframe
+                for (var i = 0; i < colls.Length; i++)
+                    if (colls[i].name == "SleepTrigger") colls[i].gameObject.AddComponent<SleepListener>().mod = this;
             }
-            for (var i = 0; i < colls.Length; i++)
-                if (colls[i].name == "SleepTrigger") colls[i].gameObject.AddComponent<SleepListener>().mod = this;
             updateSettings();
         }
 
         public override void FixedUpdate()
         {
-            // De-blur
-            if (!mode && damageEffect.blurSpread > 0)
-                damageEffect.blurSpread -= 0.1f;
-            else damageEffect.enabled = false;
-
-            if (death.activeSelf)
-            {
-                hp = 100;
-                poisonCounter = 0;
-                return;
-            }
-            if (mode)
-            {
-                editHp(100 - Mathf.Max(stats[0].Value - 100, stats[1].Value - 100, stats[2].Value - 100, stats[3].Value - 100, burns.Value, wasp.Value) - hp, "VanillaMode", true);
-                return;
-            }
-
-            // HP Change
-            if ((bool)crashHpLoss.Value)
+            if (death.activeSelf) return;
+            if (!mode && (bool)crashHpLoss.Value)
             {
                 if (vehicle.Value != "" && (!vehiJoint || vehiJoint && vehiJoint.breakForce != Mathf.Infinity))
                 {
@@ -282,9 +283,47 @@ namespace HealthMod
                 }
                 if (crashCooldown > 0) crashCooldown -= 0.05f;
             }
+            if (poisonCounter > 0)
+            {
+                poisonCounter--;
+                if (editHp(-0.001f))
+                    killCustom("Man killed\nfrom alcohol\npoisoning", "Mies kuoli\nalkoholimyrkytykseen");
+            }
+        }
+
+        public override void Update()
+        {
+            // De-blur
+            if (!mode)
+            {
+                if (damageEffect.blurSize > 0)
+                    damageEffect.blurSize -= Time.deltaTime * 4;
+                else damageEffect.enabled = false;
+            }
+
+            if (death.activeSelf)
+            {
+                hp = 100;
+                poisonCounter = 0;
+                return;
+            }
+            if (mode)
+            {
+                editHp(100 - Mathf.Max(stats[0].Value - 100, stats[1].Value - 100, stats[2].Value - 100, stats[3].Value - 100, burns.Value, wasp.Value) - hp, null, true);
+                return;
+            }
+
+            // HP Change
+            if (pHunger != stats[1].Value)
+            {
+                var diff = pHunger - stats[1].Value;
+                if (diff > 0) editHp(diff, "Eat");
+                pHunger = stats[1].Value;
+            }
             for (var i = 0; i < stats.Length; i++)
                 if (stats[i].Value > 100.1f)
                 {
+                    if (stats[i].Name == "PlayerHunger") pHunger = 100.1f;
                     if (editHp((100.1f - stats[i].Value) / 1.5f, "StatDamage"))
                     {
                         kill(stats[i].Name.Substring(6));
@@ -317,67 +356,65 @@ namespace HealthMod
                 swimFsm.SendEvent("SWIM");
                 if (editHp(-5, "DrunkDrown")) kill("DrunkDrown");
             }
-            if (poisonCounter > 0)
-            {
-                poisonCounter--;
-                if (editHp(-0.001f, "Poison"))
-                {
-                    kill();
-                    death.transform.Find("GameOverScreen/Paper/Fatigue/TextEN").GetComponent<TextMesh>().text = "Man killed\nfrom alcohol\npoisoning";
-                    death.transform.Find("GameOverScreen/Paper/Fatigue/TextFI").GetComponent<TextMesh>().text = "Mies kuoli\nalkoholimyrkytykseen";
-                }
-            }
-            if (pHunger != stats[1].Value)
-            {
-                var diff = pHunger - stats[1].Value;
-                if (diff > 0) editHp(diff, "Eat");
-                pHunger = stats[1].Value;
-            }
         }
 
         void updateSettings()
         {
-            log("Settings updated:");
-            log($"crashHpLoss = {crashHpLoss.Value}");
             difficultyMulti = Mathf.Clamp(Convert.ToSingle(difficulty.Value), 0.5f, 3);
-            log($"difficultyMulti = {difficultyMulti}");
             crashMin = Mathf.Clamp(Convert.ToSingle(minCrashSpeed.Value), 10, 30) * 5 / 18;
-            log($"crashMin = {crashMin}");
+
+            log($"Settings updated:\n\tcrashHpLoss = {crashHpLoss.Value}\n\tdifficultyMulti = {difficultyMulti}\n\tcrashMin = {crashMin}");
 
             if (deathSpeeds != null && !mode) for (var i = 0; i < deathSpeeds.Count; i++)
                 deathSpeeds[i].Value = (bool)crashHpLoss.Value ? Mathf.Infinity : 5;
         }
 
-        void log(object str) => Console.WriteLine($"[{ID}] {str}");
+        void log(object obj) => Console.WriteLine($"[{ID}] {obj}");
 
-        public bool editHp(float val, string reason, bool noMulti = false)
+        /// <summary>Add or remove hp</summary>
+        /// <remarks>noMulti bypasses the difficulty damage multiplier and should not be used</remarks>
+        /// <returns>Returns true when the player is at 0 hp</returns>
+        public bool editHp(float val, string reason = null, bool noMulti = false)
         {
-            if (!noMulti)
-                val = val > 0 ? val / difficultyMulti : val * difficultyMulti;
+            if (death.activeInHierarchy) return false;
+            if (!noMulti) val = val > 0 ? val / difficultyMulti : val * difficultyMulti;
             hp = Mathf.Clamp(hp + val, 0, 100);
             hpBar.localScale = new Vector3(hp / 100, 1);
-            log($"HP set to {hp} because {reason}");
+            if (reason != null) log($"HP set to {hp} because {reason}");
 
             if (poisonCounter > 0) hudMat.color = Color.green;
             else hudMat.color = hp > 30 ? Color.white : Color.red;
             return hp == 0;
         }
 
-        public bool damage(float val, string reason, float damageMulti = 1)
+        /// <summary>Blur the player's vision, play a damage sound, and remove hp</summary>
+        /// <remarks>Damage is calculated with -val * damageMulti</remarks>
+        /// <returns>Returns true when the player is at 0 hp</returns>
+        public bool damage(float val, string reason = null, float damageMulti = 1)
         {
             damageEffect.enabled = true;
-            damageEffect.blurSpread += val / 10;
+            damageEffect.blurSize += val / 10;
             AudioSource.PlayClipAtPoint(hitSfx[UnityEngine.Random.Range(0, hitSfx.Length - 1)], player.transform.position);
 
-            log($"Blurred because {reason}");
-            return damageMulti == 0 || editHp(-val * damageMulti, reason);
+            if (reason != null) log($"Blurred because {reason}");
+            if (damageMulti == 0) return false;
+            return editHp(-val * damageMulti, reason);
         }
 
+        /// <summary>Kill the player using any of the vanilla death booleans</summary>
         public void kill(string type = null)
         {
             death.SetActive(true);
             if (type != null)
                 deathVars.FindFsmBool(type).Value = true;
+        }
+
+        /// <summary>Kill the player and set custom death text</summary>
+        public void killCustom(string en, string fi)
+        {
+            kill();
+            death.transform.Find("GameOverScreen/Paper/Fatigue/TextEN").GetComponent<TextMesh>().text = en;
+            death.transform.Find("GameOverScreen/Paper/Fatigue/TextFI").GetComponent<TextMesh>().text = fi;
         }
     }
 }
