@@ -1,3 +1,5 @@
+using HutongGames.PlayMaker;
+using HutongGames.PlayMaker.Actions;
 using UnityEngine;
 using System.Linq;
 
@@ -7,33 +9,61 @@ namespace HealthMod
     {
         Rigidbody thisRb => GetComponent<Rigidbody>();
         public Health mod;
-        float velo;
+        Vector3 velo;
 
         void OnCollisionEnter(Collision col)
         {
-            if (!mod.death.activeSelf && (bool)mod.crashHpLoss.Value && mod.crashCooldown <= 0)
+            if (!mod.death.activeSelf && (bool)mod.crashHpLoss.Value)
             {
-                var hitSpeed = Mathf.Abs(thisRb.velocity.magnitude - velo);
+                if (mod.crashCooldown > 0) return;
+
+                var hitSpeed = Vector3.Distance(thisRb.velocity, velo);
                 if (hitSpeed < mod.crashMin) return;
                 mod.crashCooldown = hitSpeed;
-                if (!transform.parent)
+
+                if (transform.parent && col.gameObject.name == "PLAYER")
                 {
-                    if (mod.vehicle.Value != "" && name.Contains(mod.vehicle.Value.ToUpper()) && mod.damage(hitSpeed * mod.crashMulti, "Crash"))
+                    if (mod.damage(hitSpeed * 8, "AICrash"))
                     {
-                        if (col.gameObject.name == "TRAIN") mod.kill("Train");
-                        else mod.vehiJoint.breakTorque = 0;
+                        if (name.Contains("RALLY")) mod.kill("RunOverRally");
+                        else if (name.Contains("drag")) mod.kill("RunOverDrag");
+                        else mod.kill("RunOver");
                     }
                 }
-                else if (col.transform.root.name == "PLAYER" && mod.damage(hitSpeed * 6, "AICrash"))
-                {
-                    if (name.Contains("RALLY")) mod.kill("RunOverRally");
-                    else if (name.Contains("drag")) mod.kill("RunOverDrag");
-                    else mod.kill("RunOver");
-                }
+                else if (mod.vehicle.Value != "" && name.ToUpper().Contains(mod.vehicle.Value.ToUpper())
+                    && mod.damage(hitSpeed * mod.crashMulti, "Crash")) mod.vehiJoint.breakTorque = 0;
             }
         }
 
-        void FixedUpdate() => velo = thisRb.velocity.magnitude;
+        void FixedUpdate() => velo = thisRb.velocity;
+    }
+
+    public class SeatBeltListener : MonoBehaviour
+    {
+        public Health mod;
+        FsmFloat force;
+
+        void Awake()
+        {
+            var fsm = GetComponents<PlayMakerFSM>().FirstOrDefault(x => x.FsmName == "HeadForce");
+            if (!fsm)
+            {
+                Destroy(this);
+                return;
+            }
+
+            force = fsm.FsmVariables.FindFsmFloat("Force");
+            (fsm.FsmStates[0].Actions[2] as SetProperty).everyFrame = false;
+            (fsm.FsmStates[0].Actions[3] as SetProperty).everyFrame = false;
+            (fsm.FsmStates[1].Actions[2] as SetProperty).everyFrame = false;
+            (fsm.FsmStates[1].Actions[3] as SetProperty).everyFrame = false;
+        }
+
+        void Update()
+        {
+            if (mod.vehicle.Value != "" && transform.root.name.Contains(mod.vehicle.Value.ToUpper()) && mod.oldForce != force.Value)
+                mod.oldForce = force.Value;
+        }
     }
 
     public class BeeListener : MonoBehaviour
