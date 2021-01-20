@@ -4,8 +4,8 @@ using UnityStandardAssets.ImageEffects;
 using HutongGames.PlayMaker;
 using System;
 using System.IO;
-using System.Text;
 using System.Linq;
+using System.Text;
 using System.Collections.Generic;
 
 namespace HealthMod
@@ -15,80 +15,79 @@ namespace HealthMod
         public override string ID => "Health";
         public override string Name => "Health";
         public override string Author => "Horsey4";
-        public override string Version => "1.2.0";
+        public override string Version => "1.2.1";
         public override bool SecondPass => true;
-        public static int apiVer => 2;
-        public string saveFile => $@"{ModLoader.GetModConfigFolder(this)}\save.txt";
-        public FsmFloat drunk => FsmVariables.GlobalVariables.FindFsmFloat("PlayerDrunk");
-        public FsmString vehicle => FsmVariables.GlobalVariables.FindFsmString("PlayerCurrentVehicle");
-        public FsmFloat fatigue => FsmVariables.GlobalVariables.FindFsmFloat("PlayerFatigue");
-        public FsmFloat burns => FsmVariables.GlobalVariables.FindFsmFloat("PlayerBurns");
-        public Settings vanillaMode;
-        public Settings crashHpLoss;
-        public Settings difficulty;
-        public Settings minCrashSpeed;
-        public ConfigurableJoint vehiJoint;
-        public GameObject death;
-        public BlurOptimized damageEffect;
-        public List<FsmFloat> deathSpeeds = new List<FsmFloat>();
-        public AudioClip[] hitSfx = new AudioClip[8];
-        public Material hudMat;
-        public Transform HUD;
-        public Transform hpBar;
-        public Transform player;
-        public PlayMakerFSM wiringFsm;
-        public PlayMakerFSM callFsm;
-        public PlayMakerFSM swimFsm;
-        public FsmVariables deathVars;
-        public FsmFloat[] stats =
+        public static int apiVer => 3;
+
+        internal string saveFile => $@"{Application.persistentDataPath}\{ID}.dat";
+        internal FsmFloat drunk => FsmVariables.GlobalVariables.FindFsmFloat("PlayerDrunk");
+        internal FsmString vehicle => FsmVariables.GlobalVariables.FindFsmString("PlayerCurrentVehicle");
+        internal FsmFloat fatigue => FsmVariables.GlobalVariables.FindFsmFloat("PlayerFatigue");
+        internal FsmFloat burns => FsmVariables.GlobalVariables.FindFsmFloat("PlayerBurns");
+        internal FsmBool sleeping => FsmVariables.GlobalVariables.FindFsmBool("PlayerSleeps");
+
+        internal Settings crashHpLoss;
+        internal Settings difficulty;
+        internal Settings minCrashSpeed;
+        internal ConfigurableJoint vehiJoint;
+        internal GameObject death;
+        internal List<FsmFloat> deathSpeeds = new List<FsmFloat>();
+        internal FsmFloat[] stats =
         {
             FsmVariables.GlobalVariables.FindFsmFloat("PlayerThirst"),
             FsmVariables.GlobalVariables.FindFsmFloat("PlayerHunger"),
             FsmVariables.GlobalVariables.FindFsmFloat("PlayerStress"),
             FsmVariables.GlobalVariables.FindFsmFloat("PlayerUrine")
         };
-        public FsmFloat wasp;
+        internal Settings vanillaMode;
+        internal Material hudMat;
+        internal Transform HUD;
+        internal Transform hpBar;
+        internal BlurOptimized damageEffect;
+        internal PlayMakerFSM wiringFsm;
+        internal PlayMakerFSM callFsm;
+        internal PlayMakerFSM swimFsm;
+        internal FsmVariables deathVars;
+        internal FsmFloat wasp;
+        internal float difficultyMulti;
+        internal float pHunger;
+        internal float crashMulti;
+        internal float crashCooldown;
+        internal float crashMin;
+        internal float oldForce;
+        internal int sleepCounter;
+
+        /// <summary>The sound effects played when the damage() is ran</summary>
+        public AudioClip[] hitSfx = new AudioClip[8];
+        /// <summary>PLAYER GameObject's Transform</summary>
+        public Transform player;
+        /// <summary>The amount of health the player has</summary>
+        /// <remarks>Clamped to 0-100 by editHp()</remarks>
         public float hp;
-        public float crashMulti;
-        public float crashCooldown;
-        public float crashMin;
+        /// <summary>The amount of damage waiting to be dealt as alcohol poisoning</summary>
+        /// <remarks>1 poisonCounter = -0.001 hp</remarks>
         public int poisonCounter;
-        public float oldForce;
-        public float pHunger;
-        public int sleepCounter;
+        /// <summary>If vanilla mode is active</summary>
+        /// <remarks>Disable your integration if this is true</remarks>
         public bool mode;
-        float difficultyMulti;
 
         /* Changelogs
-         * Moved the damage blur to BlurOptimized
-         * Fixed crashes sometimes not registering
-         * Fixed seatbelts not updating the damage multiplier
-         * Fixed vanilla mode erroring
-         * Minor optimizations
-         * Other misc bugfixes
-         */
-
-        /* API Changes
-         * Publicied mode bool
-         * Added apiVer int
-         * Added killCustom() method
-         * Added auto-return to editHp when the player is dead
-         * Added summaries to methods
-         * Allowed null to be passed as a reason to skip logging
+         * Fixed rally cars not damaging you
+         * Optimized sleep healing
+         * Optimized save system
+         * Privated some variables that shouldn't be messed with
          */
 
         public override void OnNewGame() => File.Delete(saveFile);
 
         public override void OnSave()
         {
-            File.WriteAllText(saveFile, Convert.ToBase64String(Encoding.UTF8.GetBytes
-            (
-                string.Join(",", new string[]
-                {
-                    hp.ToString(),
-                    poisonCounter.ToString()
-                })
-            )));
+            var b1 = BitConverter.GetBytes(hp);
+            var b2 = BitConverter.GetBytes(poisonCounter);
+            var bytes = new byte[8];
+            b1.CopyTo(bytes, 0);
+            b2.CopyTo(bytes, 4);
+            File.WriteAllBytes(saveFile, bytes);
         }
 
         public override void ModSettings()
@@ -107,8 +106,6 @@ namespace HealthMod
 
         public override void OnLoad()
         {
-            log("Loading Stage 1");
-
             // All mode variables
             player = GameObject.Find("PLAYER").transform;
             HUD = GameObject.Find("GUI/HUD").transform;
@@ -116,7 +113,7 @@ namespace HealthMod
             var hpLabel = hpObj.Find("HUDLabel");
             var camera = player.Find("Pivot/AnimPivot/Camera/FPSCamera/FPSCamera");
             var waspFsm = camera.GetComponents<PlayMakerFSM>().FirstOrDefault(x => x.FsmName == "Blindness");
-
+            
             // All mode setup
             hpObj.name = "Health";
             hpObj.parent = HUD;
@@ -132,7 +129,7 @@ namespace HealthMod
             hudMat = hpBar.Find("HUDBar").GetComponent<MeshRenderer>().material;
             wasp = waspFsm.FsmVariables.FindFsmFloat("MaxAllergy");
             mode = (bool)vanillaMode.Value;
-
+            
             if (!mode)
             {
                 log("Loading Stage 2");
@@ -143,6 +140,7 @@ namespace HealthMod
                 deathVars = death.GetComponent<PlayMakerFSM>().FsmVariables;
 
                 // FSM setup
+                FsmVariables.GlobalVariables.FindFsmBool("OptionsPermaDeath").Value = false;
                 var actions = waspFsm.FsmStates.FirstOrDefault(x => x.Name == "Allergy").Actions;
                 var audio = GameObject.Find("MasterAudio/PlayerMisc").transform;
                 var room = GameObject.Find("YARD/Building/LIVINGROOM");
@@ -186,9 +184,21 @@ namespace HealthMod
             }
             try
             {
-                var saveData = Encoding.UTF8.GetString(Convert.FromBase64String(File.ReadAllText(saveFile))).Split(',');
-                editHp(float.Parse(saveData[0]), "Load", true);
-                poisonCounter = int.Parse(saveData[1]);
+                var oldSave = $@"{ModLoader.GetModConfigFolder(this)}\save.txt";
+                if (File.Exists(oldSave))
+                {
+                    var saveData = Encoding.UTF8.GetString(Convert.FromBase64String(File.ReadAllText(oldSave))).Split(',');
+                    var b1 = BitConverter.GetBytes(float.Parse(saveData[0]));
+                    var b2 = BitConverter.GetBytes(int.Parse(saveData[1]));
+                    var oldBytes = new byte[8];
+                    b1.CopyTo(oldBytes, 0);
+                    b2.CopyTo(oldBytes, 4);
+                    File.WriteAllBytes(saveFile, oldBytes);
+                    File.Delete(oldSave);
+                } // Convert to new save
+                var bytes = File.ReadAllBytes(saveFile);
+                editHp(BitConverter.ToSingle(bytes, 0), "Load", true);
+                poisonCounter = BitConverter.ToInt32(bytes, 4);
             }
             catch (Exception e) { editHp(100, $"LoadFallback\n{e}", true); } // Load the save file
         }
@@ -218,12 +228,11 @@ namespace HealthMod
             if (!mode)
             {
                 var cars = Resources.FindObjectsOfTypeAll<CarDynamics>();
-                var colls = Resources.FindObjectsOfTypeAll<Collider>();
                 for (var i = 0; i < cars.Length; i++)
                 {
                     log($"Hooking {cars[i].name}, Root = {cars[i].transform.parent == null}");
 
-                    if (cars[i].transform.parent && cars[i].transform.parent.name == "VehiclesHighway")
+                    if (cars[i].transform.parent)
                     {
                         if (cars[i].name == "TRUCK")
                         {
@@ -234,6 +243,11 @@ namespace HealthMod
                         else if (cars[i].name == "POLSA")
                         {
                             cars[i].transform.Find("DeathColl").localPosition = Vector3.zero;
+                        }
+                        else if (cars[i].name.Contains("RALLYCAR"))
+                        {
+                            var transform = cars[i].transform.GetChild(2);
+                            transform.localPosition = new Vector3(transform.localPosition.x, transform.localPosition.y - 0.1f, transform.localPosition.z);
                         }
                     } // Fix the AI collider jank
 
@@ -252,8 +266,6 @@ namespace HealthMod
                         trigger.gameObject.AddComponent<SeatBeltListener>().mod = this;
                     }
                 }
-                for (var i = 0; i < colls.Length; i++)
-                    if (colls[i].name == "SleepTrigger") colls[i].gameObject.AddComponent<SleepListener>().mod = this;
             }
             updateSettings();
         }
@@ -289,6 +301,12 @@ namespace HealthMod
                 if (editHp(-0.001f))
                     killCustom("Man killed\nfrom alcohol\npoisoning", "Mies kuoli\nalkoholimyrkytykseen");
             }
+            if (sleeping.Value)
+            {
+                sleepCounter++;
+                if (sleepCounter == 200) editHp(fatigue.Value, "Sleep");
+            }
+            else sleepCounter = 0;
         }
 
         public override void Update()
@@ -358,7 +376,7 @@ namespace HealthMod
             }
         }
 
-        void updateSettings()
+        internal void updateSettings()
         {
             difficultyMulti = Mathf.Clamp(Convert.ToSingle(difficulty.Value), 0.5f, 3);
             crashMin = Mathf.Clamp(Convert.ToSingle(minCrashSpeed.Value), 10, 30) * 5 / 18;
@@ -369,7 +387,7 @@ namespace HealthMod
                 deathSpeeds[i].Value = (bool)crashHpLoss.Value ? Mathf.Infinity : 5;
         }
 
-        void log(object obj) => Console.WriteLine($"[{ID}] {obj}");
+        internal void log(object obj) => Console.WriteLine($"[{ID}] {obj}");
 
         /// <summary>Add or remove hp</summary>
         /// <remarks>noMulti bypasses the difficulty damage multiplier and should not be used</remarks>
