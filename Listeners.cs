@@ -36,6 +36,29 @@ namespace HealthMod
         }
 
         void FixedUpdate() => velo = thisRb.velocity;
+
+        /*IEnumerator damage(Collision col)
+        {
+            var pVelo = velo;
+            yield return new WaitForFixedUpdate();
+            if (mod.crashCooldown > 0) yield break;
+
+            var hitSpeed = Vector3.Distance(thisRb.velocity, pVelo);
+            if (hitSpeed < mod.crashMin) yield break;
+            mod.crashCooldown = hitSpeed;
+
+            if (transform.parent && col.gameObject.name == "PLAYER")
+            {
+                if (mod.damage(hitSpeed * 8, "AICrash"))
+                {
+                    if (name.Contains("RALLY")) mod.kill("RunOverRally");
+                    else if (name.Contains("drag")) mod.kill("RunOverDrag");
+                    else mod.kill("RunOver");
+                }
+            }
+            else if (mod.vehicle.Value != "" && name.ToUpper().Contains(mod.vehicle.Value.ToUpper())
+                && mod.damage(hitSpeed * mod.crashMulti, "Crash")) mod.vehiJoint.breakTorque = 0;
+        }*/
     }
 
     public class SeatBeltListener : MonoBehaviour
@@ -126,27 +149,6 @@ namespace HealthMod
                 if (mod.damage(100, "Lightning", 0.5f))
                     mod.kill("Lightning");
                 lightningFsm.SendEvent("DIE");
-            }
-        }
-    }
-
-    public class SleepListener : MonoBehaviour
-    {
-        PlayMakerFSM sleepFsm => GetComponent<PlayMakerFSM>();
-        public Health mod;
-
-        void FixedUpdate()
-        {
-            switch (sleepFsm.ActiveStateName)
-            {
-                case "Get positions":
-                    mod.sleepCounter = 0;
-                    break;
-                case "Sleep":
-                    mod.sleepCounter++;
-                    if (mod.sleepCounter == 200)
-                        mod.editHp(mod.fatigue.Value, "Sleep");
-                    break;
             }
         }
     }
