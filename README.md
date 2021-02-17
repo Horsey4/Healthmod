@@ -2,7 +2,9 @@
 Adds a robust health system to My Summer Car
 
 API versions proceeding 4 (v1.2.3 or above) have fully static varaibles (as only 1 instance should be loaded).
+
 If you plan to make healthmod an optional add-on, do NOT use `using HealthMod` and instead access the classes via namespace so long as the mod is installed.
+
 If you want to require healhmod, you can add the `using`, as modloader won't recognise the mod if there is a reference to a non-existant file.
 
 # Example
