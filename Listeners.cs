@@ -7,40 +7,47 @@ namespace HealthMod
 {
     public class CrashListener : MonoBehaviour
     {
-        Rigidbody thisRb => GetComponent<Rigidbody>();
-        public Health mod;
+        Rigidbody thisRb;
         Vector3 velo;
+
+        void Awake() => thisRb = GetComponent<Rigidbody>();
 
         void OnCollisionEnter(Collision col)
         {
-            if (!mod.death.activeSelf && mod.crashDamage)
+            if (!Health.death.activeSelf && Health.crashDamage)
             {
-                if (mod.crashCooldown > 0) return;
+                if (Health.crashCooldown > 0) return;
 
                 var hitSpeed = Vector3.Distance(thisRb.velocity, velo);
-                if (hitSpeed < mod.crashMin) return;
-                mod.crashCooldown = hitSpeed;
+                if (hitSpeed < Health.crashMin) return;
+                Health.crashCooldown = hitSpeed;
 
                 if (transform.parent && col.gameObject.name == "PLAYER")
                 {
-                    if (mod.damage(hitSpeed * 8, "AICrash"))
+                    if (Health.damage(hitSpeed * 8, 1, "AICrash"))
                     {
-                        if (name.Contains("RALLY")) mod.kill("RunOverRally");
-                        else if (name.Contains("drag")) mod.kill("RunOverDrag");
-                        else mod.kill("RunOver");
+                        if (name.Contains("RALLY")) Health.kill("RunOverRally");
+                        else if (name.Contains("drag")) Health.kill("RunOverDrag");
+                        else Health.kill("RunOver");
                     }
                 }
-                else if (mod.vehicle.Value != "" && name.ToUpper().Contains(mod.vehicle.Value.ToUpper())
-                    && mod.damage(hitSpeed * mod.crashMulti, "Crash")) mod.vehiJoint.breakTorque = 0;
+                else if (Health.vehicle.Value != "" && name.ToUpper().Contains(Health.vehicle.Value.ToUpper())
+                    && Health.damage(hitSpeed * Health.crashMulti, 1, "Crash")) Health.vehiJoint.breakTorque = 0;
             }
         }
 
         void FixedUpdate() => velo = thisRb.velocity;
     }
 
-    public class SeatBeltListener : MonoBehaviour
+    public class DrinkListener : MonoBehaviour
     {
-        public Health mod;
+        public int drinkMulti;
+
+        void FixedUpdate() { if (Health.drunk.Value > 4) Health.poisonCounter += drinkMulti; }
+    }
+
+    class SeatBeltListener : MonoBehaviour
+    {
         FsmFloat force;
 
         void Awake()
@@ -61,58 +68,29 @@ namespace HealthMod
 
         void Update()
         {
-            if (mod.vehicle.Value != "" && transform.root.name.Contains(mod.vehicle.Value.ToUpper()) && mod.oldForce != force.Value)
-                mod.oldForce = force.Value;
+            if (Health.vehicle.Value != "" && transform.root.name.Contains(Health.vehicle.Value.ToUpper()) && Health.oldForce != force.Value)
+                Health.oldForce = force.Value;
         }
     }
 
-    public class BeeListener : MonoBehaviour
+    class BeeListener : MonoBehaviour
     {
-        public Health mod;
-
         void OnEnable()
         {
             AudioSource.PlayClipAtPoint(GetComponent<AudioSource>().clip, transform.position);
-            if (!mod.death.activeSelf && mod.damage(2000, "Bee", 0.015f))
-                mod.kill("DriveBee");
+            if (!Health.death.activeSelf && Health.damage(2000, 0.015f, "Bee"))
+                Health.kill("DriveBee");
             gameObject.SetActive(false);
         }
     }
 
-    public class DrinkListener : MonoBehaviour
+    class LightningListener : MonoBehaviour
     {
-        public Health mod;
-        int drinkMulti;
+        PlayMakerFSM lightningFsm;
 
         void Awake()
         {
-            switch (name)
-            {
-                case "SpiritBottle":
-                    drinkMulti = 100;
-                    break;
-                case "BoozeBottle":
-                    drinkMulti = 50;
-                    break;
-                case "ShotGlass":
-                    drinkMulti = 30;
-                    break;
-                case "BeerBottle":
-                    drinkMulti = 10;
-                    break;
-            }
-        }
-
-        void FixedUpdate() { if (mod.drunk.Value > 4) mod.poisonCounter += drinkMulti; }
-    }
-
-    public class LightningListener : MonoBehaviour
-    {
-        PlayMakerFSM lightningFsm => GetComponent<PlayMakerFSM>();
-        public Health mod;
-
-        void Awake()
-        {
+            lightningFsm = GetComponent<PlayMakerFSM>();
             var state = lightningFsm.FsmStates.FirstOrDefault(x => x.Name == "Kill");
             state.Actions[0].Enabled = false;
             state.Actions[1].Enabled = false;
@@ -123,8 +101,8 @@ namespace HealthMod
         {
             if (lightningFsm.ActiveStateName == "Kill")
             {
-                if (mod.damage(100, "Lightning", 0.5f))
-                    mod.kill("Lightning");
+                if (Health.damage(100, 0.5f, "Lightning"))
+                    Health.kill("Lightning");
                 lightningFsm.SendEvent("DIE");
             }
         }
