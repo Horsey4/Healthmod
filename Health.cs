@@ -14,84 +14,74 @@ namespace HealthMod
         public override string ID => "Health";
         public override string Name => "Health";
         public override string Author => "Horsey4";
-        public override string Version => "1.2.2";
+        public override string Version => "1.2.3";
         public override bool SecondPass => true;
-        public static int apiVer => 4;
-        internal string saveFile => $@"{Application.persistentDataPath}\{ID}.dat";
-        internal FsmFloat _drunk => FsmVariables.GlobalVariables.FindFsmFloat("PlayerDrunk");
-        internal FsmString _vehicle => FsmVariables.GlobalVariables.FindFsmString("PlayerCurrentVehicle");
-        internal FsmFloat _fatigue => FsmVariables.GlobalVariables.FindFsmFloat("PlayerFatigue");
-        internal FsmFloat _burns => FsmVariables.GlobalVariables.FindFsmFloat("PlayerBurns");
-        internal FsmBool _sleeping => FsmVariables.GlobalVariables.FindFsmBool("PlayerSleeps");
-        internal List<Action> routines = new List<Action>();
-        internal Settings crashHpLoss;
-        internal Settings difficulty;
-        internal Settings minCrashSpeed;
-        internal Settings vanillaMode;
-        internal ConfigurableJoint _vehiJoint;
-        internal GameObject _death;
-        internal Transform _player;
-        internal List<FsmFloat> deathSpeeds = new List<FsmFloat>();
-        internal FsmFloat[] _stats =
+        public static int apiVer => 5;
+        internal static string saveFile = $@"{Application.persistentDataPath}\Health.dat";
+        internal static FsmFloat _drunk = FsmVariables.GlobalVariables.FindFsmFloat("PlayerDrunk");
+        internal static FsmString _vehicle = FsmVariables.GlobalVariables.FindFsmString("PlayerCurrentVehicle");
+        internal static FsmFloat _fatigue = FsmVariables.GlobalVariables.FindFsmFloat("PlayerFatigue");
+        internal static FsmFloat _burns = FsmVariables.GlobalVariables.FindFsmFloat("PlayerBurns");
+        internal static FsmBool _sleeping = FsmVariables.GlobalVariables.FindFsmBool("PlayerSleeps");
+        internal static List<Action> routines = new List<Action>();
+        internal static Settings vanillaMode = new Settings("vanillaMode", "Vanilla Mode", false);
+        internal static Settings crashHpLoss = new Settings("crashHpLoss", "Crash Damage", true, updateSettings);
+        internal static Settings difficulty = new Settings("difficulty", "Difficulty Multiplier (x)", 1f, updateSettings);
+        internal static Settings minCrashSpeed = new Settings("minCrashSpeed", "Minimum Crash Speed (km/h)", 20, updateSettings);
+        internal static List<FsmFloat> deathSpeeds = new List<FsmFloat>();
+        internal static FsmFloat[] _stats =
         {
             FsmVariables.GlobalVariables.FindFsmFloat("PlayerThirst"),
             FsmVariables.GlobalVariables.FindFsmFloat("PlayerHunger"),
             FsmVariables.GlobalVariables.FindFsmFloat("PlayerStress"),
             FsmVariables.GlobalVariables.FindFsmFloat("PlayerUrine")
         };
-        internal Material hudMat;
-        internal Transform HUD;
-        internal Transform hpBar;
-        internal BlurOptimized damageEffect;
-        internal PlayMakerFSM wiringFsm;
-        internal PlayMakerFSM callFsm;
-        internal PlayMakerFSM swimFsm;
-        internal FsmVariables deathVars;
-        internal FsmFloat _wasp;
-        internal float difficultyMulti;
-        internal float pHunger;
-        internal float crashMulti;
-        internal float crashCooldown;
-        internal float crashMin;
-        internal float oldForce;
-        internal int sleepCounter;
-        internal bool _mode;
+        internal static Material hudMat;
+        internal static Transform HUD;
+        internal static Transform hpBar;
+        internal static BlurOptimized damageEffect;
+        internal static PlayMakerFSM wiringFsm;
+        internal static PlayMakerFSM callFsm;
+        internal static PlayMakerFSM swimFsm;
+        internal static FsmVariables deathVars;
+        internal static float difficultyMulti;
+        internal static float pHunger;
+        internal static float crashMulti;
+        internal static float crashCooldown;
+        internal static float crashMin;
+        internal static float oldForce;
+        internal static int sleepCounter;
+        internal static bool _mode;
 
-        public GameObject death => _death;
-        public Transform player => _player;
-        public ConfigurableJoint vehiJoint => _vehiJoint;
-        public FsmFloat[] stats => _stats;
-        public FsmFloat wasp => _wasp;
-        public FsmFloat drunk => _drunk;
-        public FsmString vehicle => _vehicle;
-        public FsmFloat fatigue => _fatigue;
-        public FsmFloat burns => _burns;
-        public FsmBool sleeping => _sleeping;
-        public bool crashDamage => (bool)crashHpLoss.Value;
-        public bool mode => _mode;
-        public AudioClip[] hitSfx = new AudioClip[8];
-        public float hp;
-        public int poisonCounter;
+        public static GameObject death { get; internal set; }
+        public static Transform player { get; internal set; }
+        public static FsmFloat wasp { get; internal set; }
+        public static ConfigurableJoint vehiJoint { get; internal set; }
+        public static bool isLoaded => ModLoader.IsModPresent("Health");
+        public static FsmFloat[] stats => _stats;
+        public static FsmFloat drunk => _drunk;
+        public static FsmString vehicle => _vehicle;
+        public static FsmFloat fatigue => _fatigue;
+        public static FsmFloat burns => _burns;
+        public static FsmBool sleeping => _sleeping;
+        public static bool crashDamage => (bool)crashHpLoss.Value;
+        public static bool mode => _mode;
+        public static AudioClip[] hitSfx = new AudioClip[8];
+        public static float hp;
+        public static int poisonCounter;
 
         public override void OnNewGame() => File.Delete(saveFile);
 
         public override void OnSave()
         {
-            var b1 = BitConverter.GetBytes(hp);
-            var b2 = BitConverter.GetBytes(poisonCounter);
             var bytes = new byte[8];
-            b1.CopyTo(bytes, 0);
-            b2.CopyTo(bytes, 4);
+            BitConverter.GetBytes(hp).CopyTo(bytes, 0);
+            BitConverter.GetBytes(poisonCounter).CopyTo(bytes, 4);
             File.WriteAllBytes(saveFile, bytes);
         }
 
         public override void ModSettings()
         {
-            vanillaMode = new Settings("vanillaMode", "Vanilla Mode", false);
-            crashHpLoss = new Settings("crashHpLoss", "Crash Damage", true, updateSettings);
-            difficulty = new Settings("difficulty", "Difficulty Multiplier (x)", 1f, updateSettings);
-            minCrashSpeed = new Settings("minCrashSpeed", "Minimum Crash Speed (km/h)", 20, updateSettings);
-
             Settings.AddText(this, "Vanilla mode cannot be toggled mid-game");
             Settings.AddCheckBox(this, vanillaMode);
             Settings.AddCheckBox(this, crashHpLoss);
@@ -102,7 +92,7 @@ namespace HealthMod
         public override void OnLoad()
         {
             // All mode variables
-            _player = GameObject.Find("PLAYER").transform;
+            player = GameObject.Find("PLAYER").transform;
             HUD = GameObject.Find("GUI/HUD").transform;
             var hpObj = GameObject.Instantiate(HUD.Find("Hunger"));
             var hpLabel = hpObj.Find("HUDLabel");
@@ -119,10 +109,10 @@ namespace HealthMod
             GameObject.Destroy(hpObj.GetComponentInChildren<PlayMakerFSM>());
 
             // All mode variables
-            _death = GameObject.Find("Systems").transform.Find("Death").gameObject;
+            death = GameObject.Find("Systems").transform.Find("Death").gameObject;
             hpBar = GameObject.Find("GUI/HUD/Health/Pivot").transform;
             hudMat = hpBar.Find("HUDBar").GetComponent<MeshRenderer>().material;
-            _wasp = waspFsm.FsmVariables.FindFsmFloat("MaxAllergy");
+            wasp = waspFsm.FsmVariables.FindFsmFloat("MaxAllergy");
             _mode = (bool)vanillaMode.Value;
 
             if (mode) routines.Add(() =>
@@ -150,12 +140,12 @@ namespace HealthMod
                     {
                         if (wasp.Value > 0)
                         {
-                            if (damage(wasp.Value * 20, "Wasp", 0.05f)) kill("Wasp");
+                            if (damage(wasp.Value * 20, 0.05f, "Wasp")) kill("Wasp");
                             wasp.Value = 0;
                         }
                     });
                 }
-                catch { log("Failed to hook waspFsm"); } // waspFsm
+                catch (Exception e) { log($"Failed to hook waspFsm\n{e}"); } // waspFsm
                 try
                 {
                     wiringFsm = GameObject.Find("SATSUMA(557kg, 248)/Wiring").GetComponents<PlayMakerFSM>().FirstOrDefault(x => x.FsmName == "Shock");
@@ -166,11 +156,11 @@ namespace HealthMod
                         if (wiringFsm.ActiveStateName == "Random")
                         {
                             wiringFsm.SendEvent("OFF");
-                            if (damage(50, "Electrocute", 0.5f)) kill("Electrocute");
+                            if (damage(50, 0.5f, "Electrocute")) kill("Electrocute");
                         }
                     });
                 }
-                catch { log("Failed to hook wiringFsm"); } // wiringFsm
+                catch (Exception e) { log($"Failed to hook wiringFsm\n{e}"); } // wiringFsm
                 try
                 {
                     callFsm = GameObject.Find("YARD/Building/LIVINGROOM").transform.Find("Telephone/Logic/Ring").GetComponent<PlayMakerFSM>();
@@ -188,11 +178,11 @@ namespace HealthMod
                         if (callFsm.ActiveStateName == "Random")
                         {
                             callFsm.SendEvent("SURVIVE");
-                            if (damage(50, "PhoneThunder", 0.5f)) kill("PhoneThunder");
+                            if (damage(50, 0.5f, "PhoneThunder")) kill("PhoneThunder");
                         }
                     });
                 }
-                catch { log("Failed to hook callFsm"); } // callFsm
+                catch (Exception e) { log($"Failed to hook callFsm\n{e}"); } // callFsm
                 try
                 {
                     swimFsm = player.GetComponents<PlayMakerFSM>().FirstOrDefault(x => x.FsmName == "Swim");
@@ -209,15 +199,15 @@ namespace HealthMod
                         }
                     });
                 }
-                catch { log("Failed to hook swimFsm"); } // swimFsm
+                catch (Exception e) { log($"Failed to hook swimFsm\n{e}"); } // swimFsm
 
                 // Component Setup
-                camera.Find("Drink/Hand/SpiritBottle").gameObject.AddComponent<DrinkListener>().mod = this;
-                camera.Find("Drink/Hand/BoozeBottle").gameObject.AddComponent<DrinkListener>().mod = this;
-                camera.Find("Drink/Hand/ShotGlass").gameObject.AddComponent<DrinkListener>().mod = this;
-                camera.Find("Drink/Hand/BeerBottle").gameObject.AddComponent<DrinkListener>().mod = this;
-                camera.Find("DeathBee").gameObject.AddComponent<BeeListener>().mod = this;
-                GameObject.Find("MAP").transform.Find("CloudSystem/Clouds/Thunder/GroundStrike").gameObject.AddComponent<LightningListener>().mod = this;
+                camera.Find("Drink/Hand/SpiritBottle").gameObject.AddComponent<DrinkListener>().drinkMulti = 100;
+                camera.Find("Drink/Hand/BoozeBottle").gameObject.AddComponent<DrinkListener>().drinkMulti = 50;
+                camera.Find("Drink/Hand/ShotGlass").gameObject.AddComponent<DrinkListener>().drinkMulti = 30;
+                camera.Find("Drink/Hand/BeerBottle").gameObject.AddComponent<DrinkListener>().drinkMulti = 10;
+                camera.Find("DeathBee").gameObject.AddComponent<BeeListener>();
+                GameObject.Find("MAP").transform.Find("CloudSystem/Clouds/Thunder/GroundStrike").gameObject.AddComponent<LightningListener>();
 
                 // Damage setup
                 for (var i = 13; i < 21; i++)
@@ -260,7 +250,6 @@ namespace HealthMod
                 poisonCounter = BitConverter.ToInt32(bytes, 4);
             }
             catch (Exception e) { setHp(100, $"LoadFallback\n{e}"); } // Load the save file
-            log("OnLoad Completed");
         }
 
         public override void SecondPassOnLoad()
@@ -322,7 +311,7 @@ namespace HealthMod
                         }
                     } // Fix the AI collider jank
 
-                    cars[i].gameObject.AddComponent<CrashListener>().mod = this;
+                    cars[i].gameObject.AddComponent<CrashListener>();
                     var fsms = cars[i].GetComponents<PlayMakerFSM>();
                     if (cars[i].transform.parent != null && fsms.Length > 0)
                     {
@@ -332,12 +321,11 @@ namespace HealthMod
                     else
                     {
                         var trigger = cars[i].GetComponentsInChildren<Collider>().FirstOrDefault(x => x.isTrigger && x.name == "DriveTrigger");
-                        if (trigger) trigger.gameObject.AddComponent<SeatBeltListener>().mod = this;
+                        if (trigger) trigger.gameObject.AddComponent<SeatBeltListener>();
                     }
                 }
             }
             updateSettings();
-            log("SecondPassOnLoad Completed");
         }
 
         public override void FixedUpdate()
@@ -347,7 +335,7 @@ namespace HealthMod
             {
                 if (vehicle.Value != "" && (!vehiJoint || vehiJoint && vehiJoint.breakForce != Mathf.Infinity))
                 {
-                    _vehiJoint = player.GetComponentInParent<ConfigurableJoint>();
+                    vehiJoint = player.GetComponentInParent<ConfigurableJoint>();
                     oldForce = vehiJoint.breakForce;
                     vehiJoint.breakForce = Mathf.Infinity;
                     vehiJoint.breakTorque = Mathf.Infinity;
@@ -398,20 +386,20 @@ namespace HealthMod
             for (var i = 0; i < routines.Count; i++) routines[i]();
         }
 
-        internal void updateSettings()
+        internal static void updateSettings()
         {
             difficultyMulti = Mathf.Clamp(Convert.ToSingle(difficulty.Value), 0.5f, 3);
             crashMin = Mathf.Clamp(Convert.ToSingle(minCrashSpeed.Value), 10, 30) * 5 / 18;
 
-            log($"Settings updated:\n\tcrashHpLoss = {crashHpLoss.Value}\n\tdifficultyMulti = {difficultyMulti}\n\tcrashMin = {crashMin}");
+            log($"Settings updated:\n\tcrashHpLoss = {crashDamage}\n\tdifficultyMulti = {difficultyMulti}\n\tcrashMin = {crashMin}");
 
             if (deathSpeeds != null && !mode) for (var i = 0; i < deathSpeeds.Count; i++)
                 deathSpeeds[i].Value = (bool)crashHpLoss.Value ? Mathf.Infinity : 5;
         }
 
-        internal void log(object obj) => Console.WriteLine($"[{ID}] {obj}");
+        internal static void log(object obj) => Console.WriteLine($"[Health] {obj}");
 
-        internal void setHp(float val, string reason = null)
+        internal static void setHp(float val, string reason = null)
         {
             if (death.activeInHierarchy) return;
             hp = Mathf.Clamp(val, 0, 100);
@@ -422,18 +410,13 @@ namespace HealthMod
             else hudMat.color = hp > 30 ? Color.white : Color.red;
         }
 
-        /// <summary>Add or remove hp</summary>
-        /// <returns>Returns true when the player is at 0 hp</returns>
-        public bool editHp(float val, string reason = null)
+        public static bool editHp(float val, string reason = null)
         {
             setHp(hp + (val > 0 ? val / difficultyMulti : val * difficultyMulti), reason);
             return hp == 0;
         }
 
-        /// <summary>Blur the player's vision, play a damage sound, and remove hp</summary>
-        /// <remarks>Damage is calculated with -val * damageMulti</remarks>
-        /// <returns>Returns true when the player is at 0 hp</returns>
-        public bool damage(float val, string reason = null, float damageMulti = 1)
+        public static bool damage(float val, float damageMulti = 1, string reason = null)
         {
             damageEffect.enabled = true;
             damageEffect.blurSize += val / 10;
@@ -444,16 +427,14 @@ namespace HealthMod
             return editHp(-val * damageMulti, reason);
         }
 
-        /// <summary>Kill the player using any of the vanilla death booleans</summary>
-        public void kill(string type = null)
+        public static void kill(string type = null)
         {
             death.SetActive(true);
             if (type != null)
                 deathVars.FindFsmBool(type).Value = true;
         }
 
-        /// <summary>Kill the player and set custom death text</summary>
-        public void killCustom(string en, string fi)
+        public static void killCustom(string en, string fi)
         {
             kill();
             death.transform.Find("GameOverScreen/Paper/Fatigue/TextEN").GetComponent<TextMesh>().text = en;
