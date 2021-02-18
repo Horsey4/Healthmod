@@ -14,7 +14,7 @@ namespace HealthMod
         public override string ID => "Health";
         public override string Name => "Health";
         public override string Author => "Horsey4";
-        public override string Version => "1.2.3";
+        public override string Version => "1.2.4";
         public override bool SecondPass => true;
         public static int apiVer => 5;
         internal static string saveFile = $@"{Application.persistentDataPath}\Health.dat";
@@ -53,16 +53,16 @@ namespace HealthMod
         internal static int sleepCounter;
         internal static bool _mode;
 
+        public static bool isLoaded => ModLoader.IsModPresent("Health");
         public static GameObject death { get; internal set; }
         public static Transform player { get; internal set; }
         public static FsmFloat wasp { get; internal set; }
         public static ConfigurableJoint vehiJoint { get; internal set; }
-        public static bool isLoaded => ModLoader.IsModPresent("Health");
         public static FsmFloat[] stats => _stats;
         public static FsmFloat drunk => _drunk;
-        public static FsmString vehicle => _vehicle;
         public static FsmFloat fatigue => _fatigue;
         public static FsmFloat burns => _burns;
+        public static FsmString vehicle => _vehicle;
         public static FsmBool sleeping => _sleeping;
         public static bool crashDamage => (bool)crashHpLoss.Value;
         public static bool mode => _mode;
@@ -91,6 +91,7 @@ namespace HealthMod
 
         public override void OnLoad()
         {
+            ModConsole.Print(routines.Count);
             // All mode variables
             player = GameObject.Find("PLAYER").transform;
             HUD = GameObject.Find("GUI/HUD").transform;
@@ -107,6 +108,7 @@ namespace HealthMod
             hpObj.localPosition = ModLoader.IsModPresent("dirtmenag")
                 ? new Vector3(-11.5f, 7.2f) : new Vector3(-11.5f, 6.8f);
             GameObject.Destroy(hpObj.GetComponentInChildren<PlayMakerFSM>());
+            routines.Clear();
 
             // All mode variables
             death = GameObject.Find("Systems").transform.Find("Death").gameObject;
@@ -276,6 +278,7 @@ namespace HealthMod
             // Other setup
             if (!mode)
             {
+                deathSpeeds.Clear();
                 var cars = Resources.FindObjectsOfTypeAll<CarDynamics>();
                 for (var i = 0; i < cars.Length; i++)
                 {
