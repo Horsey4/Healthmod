@@ -91,7 +91,6 @@ namespace HealthMod
 
         public override void OnLoad()
         {
-            ModConsole.Print(routines.Count);
             // All mode variables
             player = GameObject.Find("PLAYER").transform;
             HUD = GameObject.Find("GUI/HUD").transform;
