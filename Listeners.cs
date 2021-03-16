@@ -1,11 +1,11 @@
-using HutongGames.PlayMaker;
+﻿using HutongGames.PlayMaker;
 using HutongGames.PlayMaker.Actions;
 using UnityEngine;
 using System.Linq;
 
 namespace HealthMod
 {
-    public class CrashListener : MonoBehaviour
+    class CrashListener : MonoBehaviour
     {
         Rigidbody thisRb;
         Vector3 velo;
@@ -22,24 +22,15 @@ namespace HealthMod
                 if (hitSpeed < Health.crashMin) return;
                 Health.crashCooldown = hitSpeed;
 
-                if (transform.parent && col.gameObject.name == "PLAYER")
-                {
-                    if (Health.damage(hitSpeed * 8, 1, "AICrash"))
-                    {
-                        if (name.Contains("RALLY")) Health.kill("RunOverRally");
-                        else if (name.Contains("drag")) Health.kill("RunOverDrag");
-                        else Health.kill("RunOver");
-                    }
-                }
-                else if (Health.vehicle.Value != "" && name.ToUpper().Contains(Health.vehicle.Value.ToUpper())
-                    && Health.damage(hitSpeed * Health.crashMulti, 1, "Crash")) Health.vehiJoint.breakTorque = 0;
+                if (Health.vehicle.Value != "" && name.ToUpper().Contains(Health.vehicle.Value.ToUpper())
+                    && Health.damage(hitSpeed * Health.crashMulti, 1)) Health.vehiJoint.breakTorque = 0;
             }
         }
 
         void FixedUpdate() => velo = thisRb.velocity;
     }
 
-    public class DrinkListener : MonoBehaviour
+    class DrinkListener : MonoBehaviour
     {
         public int drinkMulti;
 
@@ -78,7 +69,7 @@ namespace HealthMod
         void OnEnable()
         {
             AudioSource.PlayClipAtPoint(GetComponent<AudioSource>().clip, transform.position);
-            if (!Health.death.activeSelf && Health.damage(2000, 0.015f, "Bee"))
+            if (!Health.death.activeSelf && Health.damage(2000, 0.015f))
                 Health.kill("DriveBee");
             gameObject.SetActive(false);
         }
@@ -101,10 +92,26 @@ namespace HealthMod
         {
             if (lightningFsm.ActiveStateName == "Kill")
             {
-                if (Health.damage(100, 0.5f, "Lightning"))
+                if (Health.damage(100, 0.5f))
                     Health.kill("Lightning");
                 lightningFsm.SendEvent("DIE");
             }
+        }
+    }
+
+    class FireListener : MonoBehaviour
+    {
+        void Awake()
+        {
+            var col = gameObject.AddComponent<BoxCollider>();
+            col.isTrigger = true;
+            col.center = new Vector3(0, 0.4f, 0.4f);
+            col.size = new Vector3(1.5f, 1, 2.5f);
+        }
+
+        void OnTriggerStay(Collider col)
+        {
+            if (col.transform == Health.player && Health.editHp(-0.18f, "Burn")) Health.kill("Burn");
         }
     }
 }

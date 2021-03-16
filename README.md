@@ -1,4 +1,5 @@
 # Healthmod
+
 Adds a robust health system to My Summer Car
 
 API versions proceeding 4 (v1.2.3 or above) have fully static varaibles (as only 1 instance should be loaded).
@@ -22,17 +23,15 @@ public class ExampleInterface : Mod
     {
         if (ModLoader.IsModPresent("Health"))
         {
-            if (HealthMod.Health.apiVer < 5) ModConsole.Warning($"[{ID}] HealthMod out of date, skipped hooks"); // Check if healthmod is up to date
+            if (HealthMod.Health.apiVer < 6) ModConsole.Warning($"[{ID}] HealthMod out of date or disabled, skipped hooks"); // Check if healthmod is up to date
             else healthmodInstalled = true; // Set the bool to indicate healthmod is installed and updated
         }
     }
 
     public override void Update()
     {
-        if (healthmodInstalled)
-        {
-            if (Input.GetKeyDown(KeyCode.UpArrow)) HealthMod.Health.editHp(10, "Example"); // Heal 10hp if up arrow is pressed
-        }
+        if (healthmodInstalled && conditionIsMet)
+            HealthMod.Health.editHp(-10); // Remove 10hp if said condition is met
     }
 }
 ```
@@ -60,9 +59,9 @@ public class ExampleInterface : Mod
 
 # Methods
 
-| Method | Returns | Description |
-|-|-|-|
-| editHp | If the player is dead or not | Simply add `val` hp (can be negitive) |
-| damage | If the player is dead or not | Subtract `val` hp, blur the player's vision, & play damage sfx |
-| kill | void | Kill the player |
-| killCustom | void | Kill the player and set custom death text |
+| Method | Type | Returns | Description |
+|-|-|-|-|
+| editHp | bool | If the player is dead or not | Simply add `val` hp (can be negitive) |
+| damage | bool | If the player is dead or not | Subtract `val` hp, blur the player's vision, & play a random damage sfx |
+| kill | void | N/A | Kill the player |
+| killCustom | void | N/A | Kill the player and set custom death text |
