@@ -111,7 +111,7 @@ namespace HealthMod
 
         void OnTriggerStay(Collider col)
         {
-            if (col.transform == Health.player && Health.editHp(-0.18f, "Burn")) Health.kill("Burn");
+            if (col.transform == Health.player && Health.editHp(-0.18f)) Health.kill("Burn");
         }
     }
 }

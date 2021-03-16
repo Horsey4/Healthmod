@@ -191,7 +191,7 @@ namespace HealthMod
                         if (swimFsm.ActiveStateName == "Randomize")
                         {
                             swimFsm.SendEvent("SWIM");
-                            if (editHp(-5, "DrunkDrown")) kill("DrunkDrown");
+                            if (editHp(-5)) kill("DrunkDrown");
                         }
                     });
                 }
@@ -239,14 +239,14 @@ namespace HealthMod
                     if (pHunger != stats[1].Value)
                     {
                         var diff = pHunger - stats[1].Value;
-                        if (diff > 0) editHp(diff, "Eat");
+                        if (diff > 0) editHp(diff);
                         pHunger = stats[1].Value;
                     }
                     for (var i = 0; i < stats.Length; i++)
                         if (stats[i].Value > 100.1f)
                         {
                             if (stats[i].Name == "PlayerHunger") pHunger = 100.1f;
-                            if (editHp((100.1f - stats[i].Value) / 1.5f, "StatDamage"))
+                            if (editHp((100.1f - stats[i].Value) / 1.5f))
                             {
                                 kill(stats[i].Name.Substring(6));
                                 stats[i].Value = 0;
@@ -255,7 +255,7 @@ namespace HealthMod
                         }
                     if (burns.Value > 0)
                     {
-                        if (editHp(-burns.Value, "Burn")) kill("Burn");
+                        if (editHp(-burns.Value)) kill("Burn");
                         burns.Value = 0;
                     }
                 });
@@ -337,7 +337,7 @@ namespace HealthMod
             if (sleeping.Value)
             {
                 sleepCounter++;
-                if (sleepCounter == 200) editHp(fatigue.Value, "Sleep");
+                if (sleepCounter == 200) editHp(fatigue.Value);
             }
             else sleepCounter = 0;
         }
@@ -377,7 +377,7 @@ namespace HealthMod
             else hudMat.color = hp > 30 ? Color.white : Color.red;
         }
 
-        public static bool editHp(float val, string reason = null)
+        public static bool editHp(float val)
         {
             setHp(hp + (val > 0 ? val / difficultyMulti : val * difficultyMulti));
             return hp == 0;
