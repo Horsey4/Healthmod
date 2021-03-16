@@ -40,7 +40,6 @@ public class ExampleInterface : Mod
 
 | Variable | Type | Description |
 |-|-|-|
-| isLoaded | bool | If HealthMod is installed & enabled |
 | death | GameObject | Reference to `Systems/Death` |
 | player | Transform | Reference to `PLAYER` |
 | wasp | FsmFloat | Reference to `PLAYER/Pivot/AnimPivot/Camera/FPSCamera/FPSCamera` Blindness FSM `MaxAllergy` float |
