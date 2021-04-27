@@ -6,7 +6,7 @@ API versions proceeding 4 (v1.2.3 or above) have fully static varaibles (as only
 
 If you plan to make healthmod an optional add-on, do NOT use `using HealthMod` and instead access the classes via namespace so long as the mod is installed.
 
-If you want to require healhmod, you can add the `using`, as modloader won't recognise the mod if there is a reference to a non-existant file.
+If you want to require healhmod, you can add the `using`, as modloader won't recognise the mod if there is a reference to a non-existent file.
 
 # Example
 
@@ -23,7 +23,9 @@ public class ExampleInterface : Mod
     {
         if (ModLoader.IsModPresent("Health"))
         {
-            if (HealthMod.Health.apiVer < 6) ModConsole.Warning($"[{ID}] HealthMod out of date or disabled, skipped hooks"); // Check if healthmod is up to date
+            if (HealthMod.Health.apiVer < 6)
+                // Check if healthmod is up to date
+                ModConsole.Warning($"[{ID}] HealthMod out of date or disabled, skipped hooks");
             else healthmodInstalled = true; // Set the bool to indicate healthmod is installed and updated
         }
     }
